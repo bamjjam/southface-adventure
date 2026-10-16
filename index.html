@@ -1,0 +1,1640 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>남극탐험 3D 멀티플레이어</title>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+KR:wght@700&display=swap');
+
+        * {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        
+        body, html {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000; overflow: hidden;
+            overscroll-behavior: none;
+            font-family: 'Noto Sans KR', 'Press Start 2P', sans-serif;
+        }
+
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; touch-action: none; }
+
+        #hud-bar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+            background-color: #000000; color: #FFFFFF;
+            display: flex; justify-content: space-around; align-items: center;
+            font-size: 14px; z-index: 10; border-bottom: 2px solid #333; padding: 0 10px; font-weight: bold;
+            pointer-events: none;
+        }
+        .hud-item { white-space: nowrap; }
+        .text-red { color: #FF3333; }
+
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center;
+            color: #FFF; pointer-events: auto; z-index: 20; padding: 20px;
+            overflow-y: auto; touch-action: pan-y; transition: background 0.3s;
+        }
+        
+        #panel-menu, #panel-lobby, #panel-result, .desc-box, input, #player-list { touch-action: pan-y; }
+        input { -webkit-user-select: text; user-select: text; }
+        
+        #panel-menu { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+
+        h1 { font-size: 40px; color: #00E5FF; text-shadow: 3px 3px 0 #002244; margin-bottom: 10px; }
+        h2 { font-size: 20px; color: #FFD700; margin-bottom: 20px; }
+        
+        .desc-box { background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; margin: 0 auto 20px auto; text-align: left; font-size: 14px; line-height: 2.0; max-width: 440px; width: 95%; box-sizing: border-box;}
+        .desc-box svg { vertical-align: middle; margin-right: 8px; margin-bottom: 3px; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8)); }
+        
+        .blink { animation: blinker 0.8s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0.3; } }
+
+        .menu-btn {
+            font-size: 18px; color: #FFD700; cursor: pointer; padding: 14px 28px; margin: 8px;
+            border: 2px solid #FFD700; border-radius: 10px; background: rgba(0,0,0,0.5);
+            font-family: inherit; font-weight: bold; min-width: 220px;
+            touch-action: manipulation;
+        }
+        .menu-btn:active { background: rgba(255,215,0,0.3); }
+        .menu-btn.secondary { color: #00E5FF; border-color: #00E5FF; }
+        .menu-btn.small { min-width: auto; font-size: 14px; padding: 8px 18px; }
+        .menu-btn:disabled { opacity: 0.4; }
+
+        #room-code-input {
+            font-size: 26px; padding: 10px; width: 160px; text-align: center; letter-spacing: 8px;
+            border-radius: 8px; border: 2px solid #00E5FF; background: #111; color: #fff; margin-bottom: 10px;
+            font-family: inherit;
+        }
+        
+        #player-name-input {
+            font-size: 18px; padding: 10px; width: 220px; text-align: center;
+            border-radius: 8px; border: 2px solid #FFD700; background: #111; color: #fff; margin-bottom: 15px;
+            font-family: inherit; outline: none;
+        }
+        #player-name-input::placeholder { color: #888; font-size: 14px; }
+
+        .room-code-display {
+            font-size: 44px; letter-spacing: 10px; color: #FFD700; font-weight: bold;
+            background: rgba(255,255,255,0.08); padding: 10px 20px; border-radius: 10px; margin-bottom: 15px;
+        }
+
+        #player-list {
+            list-style: none; padding: 0; margin: 0 0 20px 0; width: 260px; max-height: 200px; overflow-y: auto;
+        }
+        #player-list li {
+            padding: 8px 12px; border-bottom: 1px solid #333; text-align: left; font-size: 15px;
+            display: flex; justify-content: space-between;
+        }
+        .host-tag { color: #FFD700; font-size: 12px; margin-left: 6px; }
+
+        .hidden { display: none !important; }
+
+        #stage-banner {
+            position: absolute; top: 70px; left: 50%; transform: translateX(-50%) translateY(-10px);
+            background: rgba(0,0,0,0.55); color: #FFD700; padding: 14px 34px; border-radius: 12px;
+            font-size: 26px; font-weight: bold; border: 2px solid #FFD700; z-index: 18;
+            opacity: 0; pointer-events: none; transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        #stage-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        #spectator-banner {
+            position: absolute; top: 120px; left: 50%; transform: translateX(-50%);
+            text-align: center; color: #FF3333; font-size: 24px; font-weight: bold;
+            text-shadow: 2px 2px 0 #000; z-index: 15; pointer-events: none;
+        }
+
+        #leaderboard {
+            position: absolute; top: 60px; right: 10px; width: 220px;
+            background: rgba(0,0,0,0.7); color: #fff; padding: 10px;
+            border: 1px solid #555; border-radius: 5px; font-size: 12px; z-index: 10;
+            pointer-events: none;
+        }
+
+        #touch-controls {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 140px;
+            display: flex; justify-content: space-between; align-items: flex-end; padding: 0 30px 30px 30px;
+            box-sizing: border-box; pointer-events: none; z-index: 15;
+            touch-action: none;
+        }
+        .ctrl-btn-group { display: flex; gap: 15px; pointer-events: auto; touch-action: none; }
+        .ctrl-btn {
+            background: rgba(0, 0, 0, 0.7); border: 3px solid rgba(0, 229, 255, 0.8);
+            border-radius: 20px; color: #FFF; font-size: 28px; width: 85px; height: 85px;
+            display: flex; justify-content: center; align-items: center; pointer-events: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); touch-action: none;
+        }
+        .btn-jump { 
+            border-radius: 50%; width: 95px; height: 95px; font-size: 18px; font-weight: bold; 
+            border-color: rgba(255, 215, 0, 0.9); background: rgba(0, 0, 0, 0.8); color: #FFD700;
+        }
+        .ctrl-btn:active, .ctrl-btn.pressed { background: rgba(255,255,255,0.3); transform: scale(0.95); }
+        
+        #panel-result {
+            background: rgba(0,0,0,0.85); padding: 30px; border-radius: 15px; border: 2px solid #555;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .rank-row { display: flex; justify-content: space-between; width: 100%; margin: 5px 0; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 5px; font-size: 15px; }
+        .rank-row.me { background: rgba(255,215,0,0.2); border: 1px solid #FFD700; font-weight: bold; color: #FFD700; }
+    </style>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<div id="hud-bar">
+    <div class="hud-item" id="hud-score">점수: 0</div>
+    <div class="hud-item" id="hud-stage">스테이지 1</div>
+    <div class="hud-item text-red" id="hud-life">목숨: ♥♥♥</div>
+    <div class="hud-item" id="hud-dist">남은거리: 0450m</div>
+    <div class="hud-item" id="hud-speed">속도 ████</div>
+</div>
+
+<div id="leaderboard">
+    <div style="color:#FFD700; margin-bottom: 5px; font-weight: bold; text-align: center;">[ 스테이지 모드 명예의 전당 ]</div>
+    <div id="lb-list">로딩 중...</div>
+</div>
+
+<div id="touch-controls">
+    <div class="ctrl-btn-group">
+        <div id="btn-left" class="ctrl-btn">◀</div>
+        <div id="btn-right" class="ctrl-btn">▶</div>
+    </div>
+    <div id="btn-jump" class="ctrl-btn btn-jump">JUMP</div>
+</div>
+
+<div id="stage-banner"></div>
+<div id="spectator-banner" class="hidden">
+    얼음밭에 쓰러졌습니다!<br><span style="font-size:16px; color:#FFD700;">생존자를 관전하며 대기하세요</span>
+</div>
+
+<div id="overlay">
+
+    <div id="panel-menu">
+        <h1>남극탐험 3D</h1>
+        <h2>멀티플레이어 에디션</h2>
+        
+        <input type="text" id="player-name-input" maxlength="6" placeholder="닉네임 입력 (최대 6자)">
+        <div style="font-size: 12px; color: #aaa; margin-bottom: 15px;">📱 모바일은 기기를 가로로 돌린 후 플레이하세요.</div>
+        
+        <div class="desc-box">
+            <b>[아이템 안내]</b><br>
+            <svg width="22" height="22" viewBox="0 0 24 24"><path d="M22 12C22 16.4 18.4 20 14 20C10.8 20 8.1 18.2 6.7 15.6L1 21V12.5C1 8.9 3.2 5.9 6.2 4.7L8 7C9.6 5.2 11.7 4 14 4C18.4 4 22 7.6 22 12Z" fill="#FFCC00"/><circle cx="16" cy="9" r="1.5" fill="#000"/></svg>
+            노란 물고기: 보너스 점수(+500)<br>
+            
+            <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 2L22 14H16V22H8V14H2L12 2Z" fill="#00FF00"/></svg>
+            스피드업: 5초간 이동 속도 대폭 상승<br>
+            
+            <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#FF3333"/></svg>
+            생명업: 목숨(하트) 1개 회복<br>
+            
+            <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="14" r="8" fill="#333333"/><rect x="10" y="4" width="4" height="4" fill="#FFFFFF"/><path d="M12 4 Q 14 0 18 2" fill="none" stroke="#FF8C00" stroke-width="2"/><circle cx="18" cy="2" r="1.5" fill="#FF0000"/></svg>
+            폭탄: 목숨 1개 감소 및 감속<br>
+            
+            <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1Z" fill="#3388FF"/></svg>
+            무적 방패: 5초간 충돌 무시 (파란 오라)<br><br>
+            <div style="text-align: center; color: #FFF; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 5px;">
+                💻 PC: 방향키 이동, 스페이스바 점프<br>
+                📱 모바일: 화면 하단 버튼 터치
+            </div>
+        </div>
+
+        <div id="menu-buttons">
+            <button class="menu-btn" id="btn-create-room">🚩 서바이벌 방 만들기 (방장)</button>
+            <button class="menu-btn secondary" id="btn-show-join">🔑 서바이벌 방 참가하기</button>
+            <br>
+            <button class="menu-btn small" id="btn-offline" style="margin-top:14px; opacity:0.7;">오프라인 혼자 하기<br><span style="font-size:11px;">(스테이지 모드)</span></button>
+        </div>
+
+        <div id="join-form" class="hidden">
+            <div style="margin-bottom:6px; font-size:14px; color:#ccc;">방장에게 받은 4자리 방 번호를 입력하세요</div>
+            <input type="text" id="room-code-input" maxlength="4" inputmode="numeric" placeholder="0000">
+            <br>
+            <button class="menu-btn" id="btn-join-confirm">입장하기</button>
+            <button class="menu-btn small secondary" id="btn-join-cancel">취소</button>
+        </div>
+
+        <div id="menu-status" style="color:#FF6666; font-size:13px; height:18px; margin-top:8px;"></div>
+    </div>
+
+    <div id="panel-lobby" class="hidden">
+        <div id="lobby-main-ui">
+            <h1>대기실</h1>
+            <div style="font-size:13px; color:#ccc; margin-bottom:4px;">아래 번호를 친구들에게 알려주세요</div>
+            <div class="room-code-display" id="lobby-room-code">0000</div>
+            <div style="font-size:14px; color:#aaa; margin-bottom:8px;" id="lobby-player-count">참가자 0명</div>
+            <ul id="player-list"></ul>
+            <button class="menu-btn" id="btn-host-start">🏁 게임 시작</button>
+            <div id="lobby-waiting-text" class="hidden" style="color:#FFD700;">방장이 게임을 시작하기를 기다리는 중...</div>
+            <button class="menu-btn small secondary" id="btn-leave-lobby">나가기</button>
+        </div>
+        
+        <div id="lobby-countdown-ui" class="hidden">
+            <h1 id="countdown-num" style="font-size:100px;">3</h1>
+            <h2>게임이 곧 시작됩니다!</h2>
+        </div>
+    </div>
+
+    <div id="panel-result" class="hidden">
+        <h1 id="result-title">게임 오버</h1>
+        <h2 id="result-subtitle" style="margin-bottom:10px;">최종 점수: 0</h2>
+        
+        <div id="survival-rankings" class="desc-box hidden" style="width: 320px; padding:10px; margin-bottom:20px;">
+            <div style="text-align:center; margin-bottom:10px; color:#00E5FF; font-weight:bold;">서바이벌 생존 결과</div>
+            <div id="survival-list"></div>
+        </div>
+
+        <div class="desc-box" id="result-desc" style="max-width:300px; text-align:center;">얼음밭에 쓰러졌습니다...</div>
+        <button class="menu-btn" id="btn-back-lobby">🔁 로비로 돌아가기</button>
+        <div id="result-waiting-text" class="hidden" style="color:#FFD700; margin-bottom:15px;">방장이 다음 라운드를 준비하는 중...</div>
+        <button class="menu-btn small secondary" id="btn-result-exit">메뉴로 나가기</button>
+    </div>
+
+</div>
+
+<script>
+// 1. 아이패드/아이폰 사파리 멀티터치(양손 엄지 조작) 핀치 줌 원천 차단
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function(evt) {
+    document.addEventListener(evt, function(e) {
+        e.preventDefault();
+    }, { passive: false });
+});
+
+// 2. 더블클릭 및 더블탭 화면 확대 원천 차단
+document.addEventListener('dblclick', function(e) {
+    e.preventDefault();
+}, { passive: false });
+
+let lastTouchEndTime = 0;
+
+document.addEventListener('touchstart', function(e) {
+    // 메뉴/로비 오버레이 안에서는 1손가락 터치/스크롤 허용, 2손가락 줌만 차단
+    if (e.target.closest('#overlay')) {
+        if (e.touches && e.touches.length > 1) e.preventDefault();
+        return;
+    }
+    // 인게임 화면(눈밭 배경, 컨트롤 버튼 주변 등)에서는 사파리 기본 확대 동작 완벽 차단
+    e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('touchmove', function(e) {
+    if (e.target.closest('#overlay')) {
+        if (e.touches && e.touches.length > 1) e.preventDefault();
+        return;
+    }
+    e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('touchend', function(e) {
+    const now = Date.now();
+    // 350ms 이내 연속 터치 시 사파리 더블탭 줌 방지
+    if (now - lastTouchEndTime <= 350) {
+        e.preventDefault();
+    }
+    lastTouchEndTime = now;
+
+    if (!e.target.closest('#overlay')) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
+const firebaseConfig = {
+    apiKey: "AIzaSyUa6Wufac8CxBwFI5VTV8ijkQsukccY9Y",
+    authDomain: "northface-b3e18.firebaseapp.com",
+    databaseURL: "https://northface-b3e18-default-rtdb.firebaseio.com",
+    projectId: "northface-b3e18",
+    storageBucket: "northface-b3e18.firebasestorage.app",
+    messagingSenderId: "5669386819",
+    appId: "1:5669386819:web:dcf38c29f9e360575c72f6"
+};
+
+let database = null;
+let myPlayerId = "player_" + Math.floor(Math.random() * 100000);
+let playerName = "펭귄" + Math.floor(Math.random() * 999);
+
+function setPlayerName() {
+    let inputEl = document.getElementById('player-name-input');
+    if(inputEl) {
+        let inputName = inputEl.value.trim();
+        if (inputName !== "") playerName = inputName;
+    }
+}
+
+try {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+} catch (e) {
+    console.warn("Firebase 연결 실패. 오프라인 모드 작동");
+    database = null;
+}
+
+const RoomManager = {
+    roomCode: null, isHost: false, lobbyPlayers: {}, playersRef: null, statusRef: null,
+
+    async createRoom() {
+        if (!database) { Game.showMenuStatus("Firebase 연결 안 됨"); return; }
+        try {
+            let code, exists = true, tries = 0;
+            while (exists && tries < 10) {
+                code = String(Math.floor(1000 + Math.random() * 9000));
+                const snap = await database.ref(`rooms/${code}/status`).once('value');
+                exists = snap.exists();
+                tries++;
+            }
+            await database.ref(`rooms/${code}/status`).set('lobby');
+            await this.enterRoom(code);
+        } catch (e) { Game.showMenuStatus("방 생성 실패"); }
+    },
+
+    async joinRoom(code) {
+        if (!database) { Game.showMenuStatus("Firebase 연결 안 됨"); return; }
+        if (!/^[0-9]{4}$/.test(code)) { Game.showMenuStatus("4자리 방 번호 입력"); return; }
+        try {
+            const snap = await database.ref(`rooms/${code}/status`).once('value');
+            if (!snap.exists()) { Game.showMenuStatus("존재하지 않는 방"); return; }
+            const status = snap.val();
+            if (status && status !== 'lobby') { Game.showMenuStatus("이미 게임 진행 중"); return; }
+            await this.enterRoom(code);
+        } catch (e) { Game.showMenuStatus("입장 실패"); }
+    },
+
+    async enterRoom(code) {
+        this.roomCode = code;
+        this.playersRef = database.ref(`rooms/${code}/players`);
+        this.statusRef = database.ref(`rooms/${code}/status`);
+
+        await this.playersRef.child(myPlayerId).set({ name: playerName, joinedAt: Date.now() });
+        this.playersRef.child(myPlayerId).onDisconnect().remove();
+
+        this.playersRef.on('value', (snap) => {
+            this.lobbyPlayers = snap.val() || {};
+            this.recalcHost();
+            if (Game.state === 'LOBBY') Game.renderLobbyList();
+            if (Game.state === 'PLAYING' || Game.state === 'GAME_OVER') Game.syncRemotePlayers();
+        });
+
+        this.statusRef.on('value', (snap) => {
+            const status = snap.val();
+            if (status === 'starting' && Game.state === 'LOBBY') {
+                Game.beginCountdown();
+            } else if (status === 'lobby' && (Game.state === 'GAME_OVER' || Game.state === 'STAGE_CLEAR')) {
+                Game.state = 'LOBBY';
+                Game.showLobby();
+            }
+        });
+
+        Game.state = 'LOBBY';
+        Game.showLobby();
+    },
+
+    recalcHost() {
+        let minId = null, minJoined = Infinity;
+        for (let id in this.lobbyPlayers) {
+            const j = this.lobbyPlayers[id].joinedAt || 0;
+            if (j < minJoined || (j === minJoined && (minId === null || id < minId))) {
+                minJoined = j; minId = id;
+            }
+        }
+        this.isHost = (minId === myPlayerId);
+    },
+
+    async requestStart() {
+        if (!this.isHost || !this.roomCode) return;
+        await this.statusRef.set('starting');
+    },
+
+    async returnToLobby() {
+        if (!this.isHost || !this.roomCode) return;
+        this.playersRef.child(myPlayerId).update({ isDead: false, survivalTime: 0, score: 0 });
+        await this.statusRef.set('lobby');
+    },
+
+    leaveRoom() {
+        if (this.playersRef) {
+            this.playersRef.child(myPlayerId).remove();
+            this.playersRef.off();
+        }
+        if (this.statusRef) this.statusRef.off();
+        this.roomCode = null; this.isHost = false; this.lobbyPlayers = {};
+    },
+
+    broadcastPosition(x, y, z, celebrating, isDead, survivalTime, score) {
+        if (!this.playersRef) return;
+        let updateData = { x, y, z, celebrating: !!celebrating };
+        if (isDead !== undefined) updateData.isDead = isDead;
+        if (survivalTime !== undefined) updateData.survivalTime = survivalTime;
+        if (score !== undefined) updateData.score = score;
+        this.playersRef.child(myPlayerId).update(updateData);
+    }
+};
+
+window.addEventListener('beforeunload', () => { RoomManager.leaveRoom(); });
+
+class SoundManager {
+    static ctx = null;
+    static init() {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+    }
+    static play(type) {
+        if (!this.ctx) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain); gain.connect(this.ctx.destination);
+
+        if(type === 'jump') {
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(250, t); osc.frequency.exponentialRampToValueAtTime(550, t + 0.15);
+            gain.gain.setValueAtTime(0.15, t); gain.gain.linearRampToValueAtTime(0, t + 0.15);
+            osc.start(t); osc.stop(t + 0.15);
+        } else if (type === 'item') {
+            osc.type = 'sine'; osc.frequency.setValueAtTime(1046.5, t); osc.frequency.linearRampToValueAtTime(2093, t + 0.25);
+            gain.gain.setValueAtTime(0.12, t); gain.gain.linearRampToValueAtTime(0, t + 0.3);
+            osc.start(t); osc.stop(t + 0.3);
+        } else if (type === 'hit') {
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(140, t); osc.frequency.exponentialRampToValueAtTime(40, t + 0.25);
+            gain.gain.setValueAtTime(0.2, t); gain.gain.linearRampToValueAtTime(0, t + 0.25);
+            osc.start(t); osc.stop(t + 0.25);
+        } else if (type === 'clear') {
+            osc.type = 'square'; osc.frequency.setValueAtTime(523, t); osc.frequency.setValueAtTime(659, t+0.15); osc.frequency.setValueAtTime(784, t+0.3);
+            gain.gain.setValueAtTime(0.15, t); gain.gain.linearRampToValueAtTime(0, t + 0.5);
+            osc.start(t); osc.stop(t + 0.5);
+        } else if (type === 'countdown') {
+            osc.type = 'square'; osc.frequency.setValueAtTime(880, t);
+            gain.gain.setValueAtTime(0.12, t); gain.gain.linearRampToValueAtTime(0, t + 0.12);
+            osc.start(t); osc.stop(t + 0.12);
+        }
+    }
+}
+
+const Input = {
+    left: false, right: false, jump: false,
+    _jumpHandled: false,
+    init() {
+        const handleKey = (e, isDown) => {
+            if (isDown) SoundManager.init();
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.left = isDown;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') this.right = isDown;
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                if (isDown && !this.jump && !this._jumpHandled) { this.jump = true; this._jumpHandled = true; }
+                else if (!isDown) { this.jump = false; this._jumpHandled = false; }
+            }
+        };
+        window.addEventListener('keydown', e => handleKey(e, true));
+        window.addEventListener('keyup', e => handleKey(e, false));
+
+        const bindBtn = (id, key) => {
+            const el = document.getElementById(id);
+            const down = e => {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+                SoundManager.init();
+                el.classList.add('pressed');
+                if (key === 'jump') {
+                    if (!this._jumpHandled) { this.jump = true; this._jumpHandled = true; }
+                } else {
+                    this[key] = true;
+                }
+            };
+            const up = e => {
+                if (e && e.cancelable) e.preventDefault();
+                if (e) e.stopPropagation();
+                el.classList.remove('pressed');
+                if (key === 'jump') {
+                    this.jump = false; this._jumpHandled = false;
+                } else {
+                    this[key] = false;
+                }
+            };
+            // 아이패드 멀티터치 및 포인터 이벤트 동시 지원
+            el.addEventListener('touchstart', down, { passive: false });
+            el.addEventListener('touchend', up, { passive: false });
+            el.addEventListener('touchcancel', up, { passive: false });
+            el.addEventListener('pointerdown', down);
+            el.addEventListener('pointerup', up);
+            el.addEventListener('pointerleave', up);
+            el.addEventListener('pointercancel', up);
+        };
+        bindBtn('btn-left', 'left');
+        bindBtn('btn-right', 'right');
+        bindBtn('btn-jump', 'jump');
+    },
+    consumeJump() { this.jump = false; }
+};
+
+function createTaegeukgiTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600; canvas.height = 400; 
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, 600, 400);
+
+    const cx = 300, cy = 200, d = 200, r = 100, angle = Math.atan2(2, 3); 
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle); 
+    
+    ctx.fillStyle = '#CD2E3A'; ctx.beginPath(); ctx.arc(0, 0, r, -Math.PI, 0, false); ctx.fill();
+    ctx.fillStyle = '#0047A0'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI, false); ctx.fill();
+    ctx.fillStyle = '#CD2E3A'; ctx.beginPath(); ctx.arc(-r/2, 0, r/2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0047A0'; ctx.beginPath(); ctx.arc(r/2, 0, r/2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    const barW = 100, barH = 16.67, gap = 8.33, breakW = 8.33;
+    ctx.fillStyle = '#000000';
+    const drawGwae = (rot, bars) => {
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(0, -r - 50); 
+        for(let i = 0; i < 3; i++) {
+            const y = -i * (barH + gap) - barH; 
+            if(bars[i] === 1) { ctx.fillRect(-barW/2, y, barW, barH); } 
+            else { 
+                ctx.fillRect(-barW/2, y, (barW-breakW)/2, barH);
+                ctx.fillRect(breakW/2, y, (barW-breakW)/2, barH);
+            }
+        }
+        ctx.restore();
+    };
+
+    drawGwae(Math.atan2(-2, -3) + Math.PI/2, [1,1,1]); 
+    drawGwae(Math.atan2(2, 3) + Math.PI/2, [0,0,0]);   
+    drawGwae(Math.atan2(-2, 3) + Math.PI/2, [0,1,0]);  
+    drawGwae(Math.atan2(2, -3) + Math.PI/2, [1,0,1]);  
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 16;
+    return tex;
+}
+
+const Assets = {
+    mat: {
+        black: new THREE.MeshLambertMaterial({ color: 0x111111 }),
+        white: new THREE.MeshLambertMaterial({ color: 0xFFFFFF }),
+        orange: new THREE.MeshLambertMaterial({ color: 0xFF8C00 }),
+        ice: new THREE.MeshLambertMaterial({ color: 0xB3E5FC, transparent: true, opacity: 0.85 }),
+        hole: new THREE.MeshBasicMaterial({ color: 0x001122 }),
+        seal: new THREE.MeshLambertMaterial({ color: 0x78909C }),
+        fish: new THREE.MeshLambertMaterial({ color: 0xFFCC00 }), 
+        speed: new THREE.MeshLambertMaterial({ color: 0x00FF00 }),
+        life: new THREE.MeshLambertMaterial({ color: 0xFF3333 }),
+        bomb: new THREE.MeshLambertMaterial({ color: 0x222222 }),
+        shield: new THREE.MeshLambertMaterial({ color: 0x3388FF }),
+        pole: new THREE.MeshLambertMaterial({ color: 0xCCCCCC }),
+        flag: new THREE.MeshLambertMaterial({ map: createTaegeukgiTexture(), side: THREE.DoubleSide })
+    },
+    geo: {
+        box: new THREE.BoxGeometry(1, 1, 1),
+        sphere: new THREE.SphereGeometry(1, 16, 16),
+        cylinder: new THREE.CylinderGeometry(1, 1, 1, 16),
+        cone: new THREE.ConeGeometry(1, 1, 16)
+    }
+};
+
+class Player {
+    constructor(scene, isLocal = true) {
+        this.group = new THREE.Group();
+        this.buildMesh();
+        this.group.position.set(0, 0, 0);
+        scene.add(this.group);
+
+        this.x = 0; this.y = 0; this.z = 0;
+        this.vx = 0; this.vy = 0;
+        this.w = 1.0; this.h = 2.0; this.d = 1.0;
+
+        this.isLocal = isLocal;
+        this.isDead = false; 
+        this.deathTimeRecorded = false;
+        this.survivalTime = 0;
+        
+        this.state = 'idle';
+        this.timer = 0;
+        this.walkPhase = 0;
+        this.hitTimer = 0;
+        this.shieldTimer = 0;
+        this.speedBuffTimer = 0;
+        this.currentBoost = 0; 
+        
+        this.cameraData = { pos: new THREE.Vector3(0, 4, 10), look: new THREE.Vector3(0, 1, -10) };
+
+        this.MAX_VX = 10; this.ACCEL_X = 28; this.FRICTION = 0.86;
+        this.GRAVITY = 40; this.JUMP_POWER = 14;
+    }
+
+    buildMesh() {
+        this.bodyGroup = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.2, 16), Assets.mat.black); body.position.y = 0.8; body.castShadow = true;
+        const backShell = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 16, 0, Math.PI*2, 0, Math.PI/2), Assets.mat.black); backShell.position.set(0, 0.8, 0.1);
+        const head = new THREE.Mesh(Assets.geo.sphere, Assets.mat.black); head.scale.set(0.45, 0.45, 0.45); head.position.set(0, 1.5, 0); head.castShadow = true;
+
+        const belly = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 1.0, 16), Assets.mat.white); belly.position.set(0, 0.8, -0.15);
+        const beak = new THREE.Mesh(Assets.geo.cone, Assets.mat.orange); beak.scale.set(0.15, 0.4, 0.15); beak.rotation.x = Math.PI / 2; beak.position.set(0, 1.45, -0.5);
+
+        const eyeWGeo = new THREE.SphereGeometry(0.1, 8, 8);
+        const eyeBGeo = new THREE.SphereGeometry(0.05, 8, 8);
+        const eyeL = new THREE.Mesh(eyeWGeo, Assets.mat.white); eyeL.position.set(-0.2, 1.55, -0.35);
+        const eyeR = new THREE.Mesh(eyeWGeo, Assets.mat.white); eyeR.position.set(0.2, 1.55, -0.35);
+        const pupilL = new THREE.Mesh(eyeBGeo, Assets.mat.black); pupilL.position.set(-0.2, 1.55, -0.42);
+        const pupilR = new THREE.Mesh(eyeBGeo, Assets.mat.black); pupilR.position.set(0.2, 1.55, -0.42);
+
+        this.footL = new THREE.Mesh(Assets.geo.box, Assets.mat.orange); this.footL.scale.set(0.3, 0.15, 0.5); this.footL.position.set(-0.3, 0.1, 0.2);
+        this.footR = new THREE.Mesh(Assets.geo.box, Assets.mat.orange); this.footR.scale.set(0.3, 0.15, 0.5); this.footR.position.set(0.3, 0.1, 0.2);
+        this.wingL = new THREE.Mesh(Assets.geo.box, Assets.mat.black); this.wingL.scale.set(0.1, 0.7, 0.4); this.wingL.position.set(-0.6, 0.9, 0);
+        this.wingR = new THREE.Mesh(Assets.geo.box, Assets.mat.black); this.wingR.scale.set(0.1, 0.7, 0.4); this.wingR.position.set(0.6, 0.9, 0);
+
+        this.shieldAura = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), new THREE.MeshBasicMaterial({color: 0x3388FF, transparent: true, opacity: 0.4}));
+        this.shieldAura.position.y = 1.0; this.shieldAura.visible = false;
+
+        this.bodyGroup.add(body, backShell, head, belly, beak, eyeL, eyeR, pupilL, pupilR, this.wingL, this.wingR, this.shieldAura);
+        this.group.add(this.bodyGroup, this.footL, this.footR);
+    }
+
+    updateLocal(dt, baseSpeed) {
+        if (this.isDead) return 0; 
+        
+        this.timer += dt;
+
+        if(this.speedBuffTimer > 0) { 
+            this.speedBuffTimer -= dt; 
+            this.currentBoost += (25 - this.currentBoost) * dt * 5; 
+        } else { 
+            this.currentBoost *= Math.pow(0.01, dt); 
+            if (this.currentBoost < 0.1) this.currentBoost = 0;
+        }
+        let currentSpeed = baseSpeed + this.currentBoost;
+
+        if(this.shieldTimer > 0) { 
+            this.shieldTimer -= dt; 
+            if (this.shieldTimer < 1.5) {
+                this.shieldAura.visible = Math.floor(this.timer * 15) % 2 === 0;
+            } else {
+                this.shieldAura.visible = true; 
+            }
+        } else { 
+            this.shieldAura.visible = false; 
+        }
+
+        if (Input.left) this.vx -= this.ACCEL_X * dt;
+        else if (Input.right) this.vx += this.ACCEL_X * dt;
+        else this.vx *= this.FRICTION;
+
+        this.vx = Math.max(-this.MAX_VX, Math.min(this.MAX_VX, this.vx));
+        this.x += (this.vx / Math.max(1, currentSpeed / 30)) * dt;
+
+        if (this.x < -4.0) { this.x = -4.0; this.vx = 0; }
+        if (this.x > 4.0) { this.x = 4.0; this.vx = 0; }
+
+        if (Input.jump && this.y === 0) {
+            this.vy = this.JUMP_POWER;
+            this.state = 'jump'; SoundManager.play('jump'); Input.consumeJump();
+        }
+
+        if (this.hitTimer > 0) {
+            this.hitTimer -= dt;
+            this.group.visible = Math.floor(this.timer * 12) % 2 === 0;
+            currentSpeed *= 0.5; 
+            
+            this.bodyGroup.rotation.z = -(this.vx / this.MAX_VX) * 0.15; 
+            this.bodyGroup.rotation.x = 0.2; 
+            this.bodyGroup.position.y = 0;
+            this.footL.position.y = 0.1; this.footR.position.y = 0.1;
+        } else {
+            this.group.visible = true;
+            this.state = this.y > 0 ? 'jump' : 'run';
+
+            this.bodyGroup.rotation.z = -(this.vx / this.MAX_VX) * 0.35;
+            this.bodyGroup.rotation.x = 0;
+
+            if (this.state === 'run' && currentSpeed > 0) {
+                this.walkPhase += currentSpeed * dt * 0.35;
+                this.bodyGroup.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.1;
+                this.footL.position.y = 0.1 + Math.max(0, Math.sin(this.walkPhase)) * 0.25;
+                this.footR.position.y = 0.1 + Math.max(0, Math.sin(this.walkPhase + Math.PI)) * 0.25;
+                this.wingL.rotation.z = 0.15 + Math.abs(Math.sin(this.walkPhase)) * 0.25;
+                this.wingR.rotation.z = -0.15 - Math.abs(Math.sin(this.walkPhase)) * 0.25;
+            } else if (this.state === 'jump') {
+                this.bodyGroup.position.y = 0.2; this.footL.position.y = 0.4; this.footR.position.y = 0.4;
+                this.wingL.rotation.z = 0.6; this.wingR.rotation.z = -0.6;
+            }
+        }
+
+        if (this.y > 0 || this.vy > 0) {
+            this.y += this.vy * dt; this.vy -= this.GRAVITY * dt;
+            if (this.y <= 0) { this.y = 0; this.vy = 0; }
+        }
+
+        this.z -= currentSpeed * dt; 
+        this.group.position.set(this.x, this.y, this.z); 
+        return currentSpeed; 
+    }
+
+    startCelebration() {
+        this.celebrating = true;
+        this.celebrateTime = 0;
+        this.vx = 0; this.vy = 0; this.y = 0;
+        this.hitTimer = 0;
+    }
+    
+    updateCelebration(dt) {
+        this.celebrateTime += dt;
+        const turnDuration = 0.7;
+        const turnProgress = Math.min(1, this.celebrateTime / turnDuration);
+        const eased = 1 - Math.pow(1 - turnProgress, 3);
+        this.group.rotation.y = Math.PI * eased;
+
+        const hop = Math.abs(Math.sin(this.celebrateTime * 6)) * 0.25;
+        this.bodyGroup.position.y = hop;
+        this.footL.position.y = 0.1;
+        this.footR.position.y = 0.1;
+
+        this.bodyGroup.rotation.x = 0;
+        this.bodyGroup.rotation.z = 0;
+
+        const wave = Math.sin(this.celebrateTime * 10);
+        this.wingL.rotation.z = -1.15 + wave * 0.18;
+        this.wingR.rotation.z = 1.15 - wave * 0.18;
+        this.group.position.set(this.x, this.y, this.z);
+    }
+    
+    resetPose() {
+        this.isDead = false;
+        this.deathTimeRecorded = false;
+        this.celebrating = false;
+        this.group.rotation.set(0,0,0);
+        this.wingL.rotation.z = 0.15; this.wingR.rotation.z = -0.15;
+        this.bodyGroup.rotation.set(0, 0, 0);
+        this.bodyGroup.position.y = 0;
+        this.footL.position.y = 0.1; this.footR.position.y = 0.1;
+        this.footL.rotation.set(0,0,0); this.footR.rotation.set(0,0,0);
+        this.timer = 0; this.walkPhase = 0;
+    }
+
+    destroy(scene) {
+        scene.remove(this.group);
+    }
+}
+
+class ObjectManager {
+    constructor(scene) {
+        this.scene = scene;
+        this.objects = [];
+        this.rngSeed = 12345;
+    }
+
+    seededRandom() {
+        let t = this.rngSeed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+
+    reset(seed) {
+        this.objects.forEach(o => this.scene.remove(o.mesh));
+        this.objects = [];
+        this.rngSeed = seed;
+    }
+
+    spawn(type, zPos) {
+        let obj = { type, active: true, hit: false, z: zPos };
+        obj.mesh = new THREE.Group();
+        
+        let isEdgeTrap = Math.random() < 0.30; 
+        if (isEdgeTrap && (type === 'crevasse' || type === 'bomb')) {
+            obj.x = (Math.random() < 0.5 ? -3.8 : 3.8);
+        } else {
+            obj.x = (this.seededRandom() - 0.5) * 7.6;
+        }
+        obj.y = 0;
+
+        if(type === 'crevasse') {
+            obj.w = 5.0; obj.h = 0.4; obj.d = 3.5; 
+            const hole = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 3.5), Assets.mat.hole); hole.rotation.x = -Math.PI/2; hole.position.y = 0.01;
+            const edgeGeo = new THREE.BoxGeometry(0.4, 0.25, 3.5);
+            const edgeL = new THREE.Mesh(edgeGeo, Assets.mat.ice); edgeL.position.set(-2.5, 0.12, 0);
+            const edgeR = new THREE.Mesh(edgeGeo, Assets.mat.ice); edgeR.position.set(2.5, 0.12, 0);
+            obj.mesh.add(hole, edgeL, edgeR);
+        } else if (type === 'seal') {
+            obj.w = 1.4; obj.h = 1.0; obj.d = 1.4;
+            const sealBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.4, 4, 8), Assets.mat.seal); sealBody.rotation.z = Math.PI/2; sealBody.position.y = 0.5;
+            const sealHead = new THREE.Mesh(Assets.geo.sphere, Assets.mat.seal); sealHead.scale.set(0.45, 0.45, 0.45); sealHead.position.set(0, 0.8, -0.35);
+            obj.mesh.add(sealBody, sealHead);
+            obj.vx = (this.seededRandom() > 0.5 ? 1 : -1) * 2;
+        } else if (type === 'fish') {
+            obj.isItem = true; obj.w = 2.5; obj.h = 2.0; obj.d = 2.0; 
+            obj.y = Math.random() < 0.5 ? 3.5 : 0.8; 
+            const fBodyGeo = new THREE.SphereGeometry(0.4, 16, 16);
+            const fBody = new THREE.Mesh(fBodyGeo, Assets.mat.fish);
+            fBody.scale.set(1.2, 0.8, 0.3); 
+            const fTailGeo = new THREE.ConeGeometry(0.3, 0.6, 3);
+            const fTail = new THREE.Mesh(fTailGeo, Assets.mat.fish);
+            fTail.rotation.z = -Math.PI / 2;
+            fTail.position.x = -0.6;
+            
+            const eyeM = new THREE.MeshLambertMaterial({color:0xffffff});
+            const pupM = new THREE.MeshLambertMaterial({color:0x000000});
+            const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eyeM); eyeR.position.set(0.2, 0.1, 0.12);
+            const pupR = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), pupM); pupR.position.set(0.25, 0.1, 0.16);
+            const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), eyeM); eyeL.position.set(0.2, 0.1, -0.12);
+            const pupL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), pupM); pupL.position.set(0.25, 0.1, -0.16);
+            
+            obj.mesh.add(fBody, fTail, eyeR, pupR, eyeL, pupL);
+        } else if (type === 'speedup') {
+            obj.isItem = true; obj.w = 2.5; obj.h = 2.0; obj.d = 2.0; obj.y = 0.8;
+            const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.6, 4), Assets.mat.speed);
+            arrowHead.position.y = 0.4; arrowHead.rotation.y = Math.PI / 4;
+            const arrowShaft = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), Assets.mat.speed);
+            arrowShaft.position.y = -0.2;
+            obj.mesh.add(arrowHead, arrowShaft);
+        } else if (type === 'lifeup') {
+            obj.isItem = true; obj.w = 2.5; obj.h = 2.0; obj.d = 2.0; obj.y = 0.8;
+            const mat = Assets.mat.life;
+            const lobeL = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), mat); lobeL.position.set(-0.25, 0.2, 0);
+            const lobeR = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), mat); lobeR.position.set(0.25, 0.2, 0);
+            const point = new THREE.Mesh(new THREE.ConeGeometry(0.48, 0.6, 4), mat);
+            point.rotation.x = Math.PI; point.rotation.y = Math.PI / 4; point.position.set(0, -0.15, 0);
+            obj.mesh.add(lobeL, lobeR, point);
+        } else if (type === 'bomb') {
+            obj.isItem = true; obj.w = 2.5; obj.h = 2.0; obj.d = 2.0; obj.y = 0.8;
+            const bombBody = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), Assets.mat.bomb);
+            const bombCap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.2, 8), Assets.mat.white); bombCap.position.y = 0.6;
+            const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3), Assets.mat.orange);
+            fuse.position.set(0.1, 0.8, 0); fuse.rotation.z = -Math.PI / 4;
+            const spark = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), Assets.mat.life); spark.position.set(0.2, 0.9, 0);
+            obj.mesh.add(bombBody, bombCap, fuse, spark);
+        } else if (type === 'shield') {
+            obj.isItem = true; obj.w = 2.5; obj.h = 2.0; obj.d = 2.0; obj.y = 0.8;
+            const shieldGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.15, 6);
+            const shield = new THREE.Mesh(shieldGeo, Assets.mat.shield); shield.rotation.x = Math.PI / 2;
+            const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), Assets.mat.white);
+            const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.2), Assets.mat.white);
+            obj.mesh.add(shield, crossV, crossH);
+        } else if (type === 'base') {
+            obj.isBase = true; obj.x = 0; obj.w = 8; obj.h = 4; obj.d = 4;
+            const dome = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16, 0, Math.PI*2, 0, Math.PI/2), Assets.mat.white);
+            const antenna = new THREE.Mesh(Assets.geo.cylinder, Assets.mat.pole); 
+            antenna.scale.set(0.08, 4.0, 0.08); antenna.position.set(0, 4, 0);
+            const flagMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.2), Assets.mat.flag);
+            flagMesh.position.set(0.9, 5.2, 0); 
+            obj.mesh.add(dome, antenna, flagMesh);
+        }
+
+        obj.mesh.position.set(obj.x, obj.y, obj.z);
+        this.scene.add(obj.mesh);
+        this.objects.push(obj);
+    }
+
+    update(dt, player, currentSpeed = 0, maxZ = player.z) {
+        if (player.isDead) return;
+
+        // 아이템 전용 자석 패딩 (장애물에는 절대 적용하지 않음)
+        let itemZPadding = Math.max(2.5, currentSpeed * dt * 1.5); 
+        let itemXPadding = Math.max(1.5, Math.abs(player.vx) * dt * 1.5);
+
+        for (let i = this.objects.length - 1; i >= 0; i--) {
+            let o = this.objects[i];
+
+            if (o.type === 'seal') {
+                o.x += o.vx * dt;
+                if (o.x > 4.0 || o.x < -4.0) o.vx *= -1; 
+            }
+            if (o.isItem) { o.mesh.rotation.y += 3.0 * dt; }
+            
+            let renderY = o.isItem && o.type !== 'fish' ? o.y + Math.sin(Game.time * 6 + o.x) * 0.25 : o.y;
+            o.mesh.position.set(o.x, renderY, o.z); 
+
+            if (o.isBase) continue;
+
+            let zDist = Math.abs(o.z - player.z);
+            let xDist = Math.abs(o.x - player.x);
+
+            // [터널링 방지] 프레임 사이 관통 여부
+            let prevZ = player.z + currentSpeed * dt * 2.0; 
+            let passedZ = (player.z <= o.z + o.d/2) && (prevZ >= o.z - o.d/2);
+
+            // 좋은 아이템인지 판별 (폭탄은 나쁜 아이템)
+            let isPositiveItem = o.isItem && o.type !== 'bomb';
+
+            if (isPositiveItem) {
+                // 좋은 아이템: 넓은 자석 히트박스 적용
+                if (!o.hit && (zDist < (o.d + player.d)/2 + itemZPadding || passedZ)) {
+                    if (xDist < 2.8 + itemXPadding) { 
+                        let yHit = true;
+                        if (o.type === 'fish' && o.y > 2.0) { 
+                            if (player.y < 0.2 && player.state !== 'jump') yHit = false; 
+                        }
+                        if (yHit) {
+                            o.hit = true; 
+                            SoundManager.play('item'); 
+                            Game.createItemParticles(player.x, player.y + 1.0, player.z - 2.0); 
+                            this.scene.remove(o.mesh);
+                            
+                            if(o.type === 'fish') { Game.addScore(500); }
+                            else if(o.type === 'speedup') { player.speedBuffTimer = 5.0; Game.addScore(100); }
+                            else if(o.type === 'lifeup') { Game.hearts = Math.min(3, Game.hearts+1); Game.updateUI(Game.speed); }
+                            else if(o.type === 'shield') { player.shieldTimer = 5.0; Game.addScore(100); }
+                        }
+                    }
+                }
+            } else {
+                // 구덩이, 물개, 폭탄: 칼같이 좁은 실제 히트박스만 적용 (자석 및 패딩 효과 완벽 제거)
+                let hitZThreshold = (o.d + player.d) / 2 * 0.6; 
+                let hitXThreshold = (o.w + player.w) / 2 * 0.55; 
+
+                if (!o.hit && (zDist < hitZThreshold || passedZ)) {
+                    if (xDist < hitXThreshold) {
+                        if (o.type === 'crevasse') {
+                            if (player.y < 0.4 && player.shieldTimer <= 0 && player.hitTimer <= 0) { 
+                                o.hit = true; Game.handlePlayerHit(); 
+                            }
+                        } else if (o.type === 'seal' || o.type === 'bomb') {
+                            if (player.y < 1.0 && player.shieldTimer <= 0 && player.hitTimer <= 0) {
+                                o.hit = true; Game.handlePlayerHit(); 
+                                if (o.type === 'bomb') {
+                                    this.scene.remove(o.mesh);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 화면 밖으로 나가거나 획득한 오브젝트 메모리 정리
+            if (o.z > maxZ + 20 || (o.hit && o.isItem)) {
+                this.scene.remove(o.mesh);
+                this.objects.splice(i, 1);
+            }
+        }
+    }
+}
+
+const Game = {
+    state: 'MENU', time: 0, lastTime: 0,
+    mode: 'survival', 
+    speed: 0, targetSpeed: 38,
+    hearts: 3, score: 0,
+    cameraShake: 0, spawnZ: 0, endZ: -50,
+    remotePlayers: {},
+    countdownTimer: null,
+    stage: 1, STAGE_COUNT: 10,
+    confetti: [], celebrationTimer: 0,
+    endTimer: null,
+
+    stageDistance(stage) { return 450 + (stage - 1) * 150; },
+    stageSpeed(stage) { return 25 + (stage - 1) * 3; }, 
+
+    init() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x87CEEB);
+        this.scene.fog = new THREE.Fog(0x87CEEB, 20, 130);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setScissorTest(true);
+        document.getElementById('game-container').appendChild(this.renderer.domElement);
+
+        this.camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 300);
+
+        const handleResize = () => {
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(handleResize, 200);
+        });
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.7); this.scene.add(ambient);
+        this.dirLight = new THREE.DirectionalLight(0xffffff, 0.5); this.dirLight.position.set(40, 90, 20); this.scene.add(this.dirLight);
+
+        const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0,0,256,256);
+        ctx.fillStyle = '#B3E5FC'; ctx.fillRect(0, 0, 256, 12); ctx.fillRect(0, 0, 4, 256);
+        const groundTex = new THREE.CanvasTexture(canvas);
+        groundTex.wrapS = THREE.RepeatWrapping; groundTex.wrapT = THREE.RepeatWrapping;
+        groundTex.repeat.set(16, 120);
+
+        this.ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 600), new THREE.MeshLambertMaterial({ map: groundTex }));
+        this.ground.rotation.x = -Math.PI / 2; this.scene.add(this.ground);
+
+        const lineGeo = new THREE.BoxGeometry(0.4, 0.05, 600);
+        const lineMat = new THREE.MeshBasicMaterial({ color: 0x0288D1 });
+        this.lineL = new THREE.Mesh(lineGeo, lineMat); this.lineL.position.set(-4.2, 0.02, 0);
+        this.lineR = new THREE.Mesh(lineGeo, lineMat); this.lineR.position.set(4.2, 0.02, 0);
+        this.scene.add(this.lineL, this.lineR);
+
+        Input.init();
+        this.localPlayer = new Player(this.scene, true);
+        this.objects = new ObjectManager(this.scene);
+
+        this.fetchLeaderboard();
+        this.bindUI();
+        this.showMenu();
+
+        this.lastTime = performance.now();
+        requestAnimationFrame((t) => this.loop(t));
+    },
+
+    bindUI() {
+        const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
+
+        on('btn-create-room', () => { setPlayerName(); SoundManager.init(); Game.mode = 'survival'; RoomManager.createRoom(); });
+        on('btn-show-join', () => {
+            document.getElementById('menu-buttons').classList.add('hidden');
+            document.getElementById('join-form').classList.remove('hidden');
+        });
+        on('btn-join-cancel', () => {
+            document.getElementById('menu-buttons').classList.remove('hidden');
+            document.getElementById('join-form').classList.add('hidden');
+        });
+        on('btn-join-confirm', () => {
+            setPlayerName(); SoundManager.init(); Game.mode = 'survival';
+            const code = document.getElementById('room-code-input').value.trim();
+            RoomManager.joinRoom(code);
+        });
+        on('btn-offline', () => {
+            setPlayerName(); SoundManager.init();
+            RoomManager.roomCode = null;
+            Game.mode = 'stage';
+            this.startNewGame();
+        });
+
+        on('btn-host-start', () => { SoundManager.init(); RoomManager.requestStart(); });
+        on('btn-leave-lobby', () => { RoomManager.leaveRoom(); this.showMenu(); });
+
+        on('btn-back-lobby', () => { RoomManager.returnToLobby(); });
+        on('btn-result-exit', () => { RoomManager.leaveRoom(); this.showMenu(); });
+    },
+
+    showMenuStatus(msg) {
+        const el = document.getElementById('menu-status');
+        el.innerText = msg;
+        setTimeout(() => { if (el.innerText === msg) el.innerText = ''; }, 3500);
+    },
+
+    setPanel(panelId) {
+        ['panel-menu', 'panel-lobby', 'panel-result'].forEach(id => {
+            document.getElementById(id).classList.toggle('hidden', id !== panelId);
+        });
+        document.getElementById('overlay').style.display = 'flex';
+        document.getElementById('overlay').style.background = panelId === 'panel-result' && this.state !== 'STAGE_CLEAR' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.85)';
+    },
+
+    showMenu() {
+        this.state = 'MENU';
+        document.getElementById('menu-buttons').classList.remove('hidden');
+        document.getElementById('join-form').classList.add('hidden');
+        document.getElementById('room-code-input').value = '';
+        this.setPanel('panel-menu');
+    },
+
+    showLobby() {
+        document.getElementById('lobby-main-ui').classList.remove('hidden');
+        document.getElementById('lobby-countdown-ui').classList.add('hidden');
+        document.getElementById('lobby-room-code').innerText = RoomManager.roomCode || '----';
+        this.renderLobbyList();
+        this.setPanel('panel-lobby');
+    },
+
+    renderLobbyList() {
+        const players = RoomManager.lobbyPlayers;
+        const ids = Object.keys(players);
+        document.getElementById('lobby-player-count').innerText = `참가자 ${ids.length}명`;
+
+        const list = document.getElementById('player-list');
+        list.innerHTML = '';
+        ids.sort((a, b) => (players[a].joinedAt || 0) - (players[b].joinedAt || 0));
+        ids.forEach((id, idx) => {
+            const li = document.createElement('li');
+            const isThisHost = idx === 0;
+            li.innerHTML = `<span>${players[id].name || '플레이어'}${id === myPlayerId ? ' (나)' : ''}</span>` +
+                            (isThisHost ? '<span class="host-tag">👑 방장</span>' : '');
+            list.appendChild(li);
+        });
+
+        const startBtn = document.getElementById('btn-host-start');
+        const waitText = document.getElementById('lobby-waiting-text');
+        if (RoomManager.isHost) {
+            startBtn.classList.remove('hidden'); waitText.classList.add('hidden');
+            startBtn.disabled = ids.length < 1;
+        } else {
+            startBtn.classList.add('hidden'); waitText.classList.remove('hidden');
+        }
+    },
+
+    beginCountdown() {
+        this.state = 'COUNTDOWN';
+        document.getElementById('overlay').style.display = 'flex';
+        this.setPanel('panel-lobby');
+        
+        document.getElementById('lobby-main-ui').classList.add('hidden');
+        document.getElementById('lobby-countdown-ui').classList.remove('hidden');
+        
+        let n = 3;
+        document.getElementById('countdown-num').innerText = n;
+        SoundManager.play('countdown');
+        
+        this.countdownTimer = setInterval(() => {
+            n--;
+            if (n > 0) {
+                document.getElementById('countdown-num').innerText = n;
+                SoundManager.play('countdown');
+            } else {
+                clearInterval(this.countdownTimer);
+                document.getElementById('lobby-main-ui').classList.remove('hidden');
+                document.getElementById('lobby-countdown-ui').classList.add('hidden');
+                this.startNewGame();
+            }
+        }, 700);
+    },
+
+    syncRemotePlayers() {
+        const players = RoomManager.lobbyPlayers;
+        for (let id in players) {
+            if (id === myPlayerId) continue;
+            if (!this.remotePlayers[id]) {
+                this.remotePlayers[id] = new Player(this.scene, false);
+            }
+            const p = players[id];
+            if (p.x !== undefined) {
+                let rp = this.remotePlayers[id];
+                rp.x = p.x;
+                rp.y = p.y || 0;
+                rp.z = p.z; 
+                rp.isDead = p.isDead;
+                rp.survivalTime = p.survivalTime || 0;
+                rp.group.rotation.y = p.celebrating ? Math.PI : 0;
+                rp.group.position.set(rp.x, rp.y, rp.z);
+            }
+        }
+        for (let id in this.remotePlayers) {
+            if (!players[id]) {
+                this.remotePlayers[id].destroy(this.scene);
+                delete this.remotePlayers[id];
+            }
+        }
+    },
+
+    clearRemotePlayers() {
+        for (let id in this.remotePlayers) this.remotePlayers[id].destroy(this.scene);
+        this.remotePlayers = {};
+    },
+
+    fetchLeaderboard() {
+        if(!database) return;
+        database.ref('leaderboard').orderByChild('score').limitToLast(5).on('value', snap => {
+            let html = '';
+            let arr = [];
+            snap.forEach(child => { arr.push(child.val()); });
+            arr.reverse().forEach((v, i) => { html += `<div>${i+1}. ${v.name} - ${v.score}</div>`; });
+            document.getElementById('lb-list').innerHTML = html || '기록 없음';
+        });
+    },
+
+    submitScore() {
+        if(!database || this.score <= 0) return;
+        database.ref('leaderboard').push({ name: playerName, score: this.score });
+    },
+
+    updateUI(actualSpeed) {
+        let dist = 0;
+        let distLabel = "남은거리";
+        
+        if (this.mode === 'stage') {
+            dist = this.state === 'CELEBRATING' ? 0 : Math.max(0, Math.floor(Math.abs(this.endZ - this.localPlayer.z)));
+        } else {
+            distLabel = "생존시간";
+            dist = this.localPlayer.isDead ? this.localPlayer.survivalTime : this.time;
+        }
+        
+        let heartsStr = '♥'.repeat(this.hearts) + '♡'.repeat(3 - this.hearts);
+        let speedBlocksCount = Math.min(6, Math.floor(((actualSpeed||0) / 60) * 6));
+
+        document.getElementById('hud-score').innerText = `점수: ${this.score}`;
+        document.getElementById('hud-stage').innerText = this.mode === 'stage' ? `스테이지 ${this.stage}` : '서바이벌 모드';
+        document.getElementById('hud-life').innerText = this.localPlayer.isDead ? `상태: 관전 중` : `목숨: ${heartsStr}`;
+        document.getElementById('hud-dist').innerText = `${distLabel}: ${this.mode === 'stage' ? String(dist).padStart(4,'0')+'m' : dist.toFixed(1)+'초'}`;
+        document.getElementById('hud-speed').innerText = this.localPlayer.isDead ? `속도 0` : `속도 ${'█'.repeat(speedBlocksCount)}${'░'.repeat(6-speedBlocksCount)}`;
+    },
+
+    addScore(pts) { this.score += pts; this.updateUI(this.speed); },
+
+    handlePlayerHit() {
+        if (this.localPlayer.hitTimer > 0 || this.localPlayer.isDead) return; 
+
+        this.localPlayer.hitTimer = 1.5; 
+        SoundManager.play('hit'); 
+        this.cameraShake = 0.25; 
+        this.speed *= 0.4; 
+        
+        this.hearts--;
+        if (this.hearts <= 0) {
+            this.localPlayer.isDead = true;
+            this.localPlayer.survivalTime = this.time;
+            this.localPlayer.deathTimeRecorded = true;
+            
+            if (RoomManager.roomCode) {
+                RoomManager.broadcastPosition(this.localPlayer.x, this.localPlayer.y, this.localPlayer.z, false, true, this.localPlayer.survivalTime, this.score);
+            }
+            
+            if (this.mode === 'stage') {
+                this.submitScore();
+                this.showResult('게임 오버', `최종 점수: ${this.score}`, '얼음밭에 쓰러졌습니다...', 'GAME_OVER');
+            } else {
+                document.getElementById('spectator-banner').classList.remove('hidden');
+                this.setPanel('panel-result'); 
+            }
+        }
+    },
+
+    startNewGame() {
+        this.stage = 1; this.hearts = 3; this.score = 0;
+        this.time = 0; this.endTimer = null;
+        this.setupStage();
+    },
+
+    setupStage() {
+        this.speed = 10;
+        this.targetSpeed = this.mode === 'stage' ? this.stageSpeed(this.stage) : 15;
+        this.endZ = this.mode === 'stage' ? -this.stageDistance(this.stage) : -999999;
+        this.baseSpawned = false;
+
+        this.objects.reset(12345 + this.stage * 97);
+        
+        this.localPlayer.x = 0; this.localPlayer.y = 0; this.localPlayer.z = 0;
+        this.localPlayer.vx = 0; this.localPlayer.vy = 0; 
+        this.localPlayer.resetPose();
+        
+        this.localPlayer.shieldTimer = 3.0; // 시작 시 무적
+        this.spawnZ = -60; // 안전 구역 60m 확보
+        
+        this.cameraShake = 0;
+        this.clearConfetti();
+
+        this.clearRemotePlayers();
+        if (RoomManager.roomCode) this.syncRemotePlayers();
+
+        this.state = 'PLAYING';
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('spectator-banner').classList.add('hidden');
+        this.updateUI(this.speed);
+    },
+
+    triggerClear() {
+        if (this.state !== 'PLAYING') return;
+        this.addScore(300);
+        this.hearts = Math.min(3, this.hearts + 1);
+        SoundManager.play('clear');
+        this.beginStageCelebration();
+    },
+
+    beginStageCelebration() {
+        this.state = 'CELEBRATING';
+        this.celebrationTimer = 1.5;
+        this.localPlayer.startCelebration();
+        this.spawnConfetti();
+        this.updateUI(this.speed); 
+        this.showStageBanner(
+            this.stage < this.STAGE_COUNT
+                ? `🎉 스테이지 ${this.stage} 클리어! 🎉`
+                : `🏆 10개 스테이지 모두 클리어! 🏆`
+        );
+    },
+
+    showStageBanner(text) {
+        const el = document.getElementById('stage-banner');
+        el.innerText = text;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 1500);
+    },
+
+    createItemParticles(x, y, z) {
+        for (let i = 0; i < 8; i++) {
+            const mat = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), mat);
+            mesh.position.set(x, y, z);
+            this.scene.add(mesh);
+            this.confetti.push({
+                mesh,
+                vx: (Math.random() - 0.5) * 5,
+                vy: 2 + Math.random() * 4,
+                vz: (Math.random() - 0.5) * 5,
+                life: 0.6
+            });
+        }
+    },
+
+    spawnConfetti() {
+        const colors = [0xFFD700, 0x00E5FF, 0xFF3333, 0x00FF88, 0xFFFFFF];
+        for (let i = 0; i < 18; i++) {
+            const mat = new THREE.MeshBasicMaterial({ color: colors[i % colors.length] });
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), mat);
+            mesh.position.set(this.localPlayer.x, this.localPlayer.y + 1.6, this.localPlayer.z);
+            this.scene.add(mesh);
+            this.confetti.push({
+                mesh,
+                vx: (Math.random() - 0.5) * 6,
+                vy: 5 + Math.random() * 4,
+                vz: (Math.random() - 0.5) * 6,
+                life: 2.4
+            });
+        }
+    },
+
+    updateConfetti(dt) {
+        for (let i = this.confetti.length - 1; i >= 0; i--) {
+            const c = this.confetti[i];
+            c.vy -= 14 * dt;
+            c.mesh.position.x += c.vx * dt;
+            c.mesh.position.y += c.vy * dt;
+            c.mesh.position.z += c.vz * dt;
+            c.mesh.rotation.x += dt * 6; c.mesh.rotation.y += dt * 6;
+            c.life -= dt;
+            if (c.life <= 0) {
+                this.scene.remove(c.mesh);
+                this.confetti.splice(i, 1);
+            }
+        }
+    },
+
+    clearConfetti() {
+        this.confetti.forEach(c => this.scene.remove(c.mesh));
+        this.confetti = [];
+    },
+
+    showResult(title, subtitle, desc, state) {
+        this.state = state;
+        document.getElementById('result-title').innerText = title;
+        document.getElementById('result-subtitle').innerText = subtitle;
+        document.getElementById('result-desc').innerText = desc;
+        document.getElementById('survival-rankings').classList.add('hidden');
+
+        const backBtn = document.getElementById('btn-back-lobby');
+        const waitText = document.getElementById('result-waiting-text');
+        if (!RoomManager.roomCode) {
+            backBtn.classList.add('hidden'); waitText.classList.add('hidden');
+        } else if (RoomManager.isHost) {
+            backBtn.classList.remove('hidden'); waitText.classList.add('hidden');
+        } else {
+            backBtn.classList.add('hidden'); waitText.classList.remove('hidden');
+        }
+        document.getElementById('overlay').style.background = 'rgba(0,0,0,0.85)';
+        this.setPanel('panel-result');
+    },
+
+    showSurvivalResult() {
+        this.state = 'GAME_OVER';
+        document.getElementById('spectator-banner').classList.add('hidden');
+        document.getElementById('result-title').innerText = "서바이벌 종료!";
+        document.getElementById('result-subtitle').innerText = "";
+        document.getElementById('result-desc').innerText = "승부가 결정되었습니다.";
+        
+        let results = [];
+        results.push({ name: playerName, time: this.localPlayer.survivalTime, isMe: true });
+        for (let id in RoomManager.lobbyPlayers) {
+            if (id === myPlayerId) continue;
+            let p = RoomManager.lobbyPlayers[id];
+            results.push({ name: p.name || '알수없음', time: p.survivalTime || 0, isMe: false });
+        }
+        results.sort((a, b) => b.time - a.time);
+
+        let listHtml = '';
+        results.forEach((r, i) => {
+            let rankStr = (i === 0) ? '🏆 1위' : `${i+1}위`;
+            listHtml += `<div class="rank-row ${r.isMe ? 'me' : ''}"><span>${rankStr}. ${r.name}</span><span>${r.time.toFixed(1)}초</span></div>`;
+        });
+        
+        document.getElementById('survival-list').innerHTML = listHtml;
+        document.getElementById('survival-rankings').classList.remove('hidden');
+
+        const backBtn = document.getElementById('btn-back-lobby');
+        const waitText = document.getElementById('result-waiting-text');
+        if (RoomManager.isHost) {
+            backBtn.classList.remove('hidden'); waitText.classList.add('hidden');
+        } else {
+            backBtn.classList.add('hidden'); waitText.classList.remove('hidden');
+        }
+        
+        document.getElementById('overlay').style.background = 'rgba(0,0,0,0.85)';
+        this.setPanel('panel-result');
+    },
+
+    loop(timestamp) {
+        requestAnimationFrame((t) => this.loop(t));
+        let dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+        this.lastTime = timestamp; 
+
+        if (this.state === 'MENU' || this.state === 'LOBBY' || this.state === 'GAME_OVER' || this.state === 'STAGE_CLEAR' || this.state === 'COUNTDOWN') {
+            this.time += dt;
+            this.localPlayer.group.rotation.y = this.time * 1.5;
+            this.renderSplitScreen();
+        } else if (this.state === 'PLAYING') {
+            if (!this.localPlayer.isDead) this.time += dt;
+            
+            this.localPlayer.group.rotation.y = 0;
+            
+            if (this.mode === 'survival' && !this.localPlayer.isDead) {
+                this.targetSpeed = 15 + (this.time * 0.4);
+            }
+
+            if (this.localPlayer.hitTimer <= 0) this.speed += (this.targetSpeed - this.speed) * dt * 0.4;
+
+            let actualSpeed = this.localPlayer.updateLocal(dt, this.speed);
+
+            if (RoomManager.roomCode) RoomManager.broadcastPosition(this.localPlayer.x, this.localPlayer.y, this.localPlayer.z, false, this.localPlayer.isDead, this.localPlayer.survivalTime, this.score);
+
+            let minZ = this.localPlayer.z;
+            let maxZ = this.localPlayer.z;
+            let allPlayers = [this.localPlayer];
+            
+            for (let id in this.remotePlayers) {
+                let rp = this.remotePlayers[id];
+                allPlayers.push(rp);
+                if (!rp.isDead) {
+                    if (rp.z < minZ) minZ = rp.z;
+                    if (rp.z > maxZ) maxZ = rp.z;
+                    
+                    rp.walkPhase += 10 * dt * 0.35; 
+                    rp.bodyGroup.position.y = Math.abs(Math.sin(rp.walkPhase)) * 0.1;
+                    rp.footL.position.y = 0.1 + Math.max(0, Math.sin(rp.walkPhase)) * 0.25;
+                    rp.footR.position.y = 0.1 + Math.max(0, Math.sin(rp.walkPhase + Math.PI)) * 0.25;
+                    rp.wingL.rotation.z = 0.15 + Math.abs(Math.sin(rp.walkPhase)) * 0.25;
+                    rp.wingR.rotation.z = -0.15 - Math.abs(Math.sin(rp.walkPhase)) * 0.25;
+                }
+            }
+
+            while (this.spawnZ > minZ - 200 && (this.mode === 'survival' || this.spawnZ > this.endZ + 40)) {
+                let isSafeZone = this.spawnZ > -60; 
+                const obstacleChance = isSafeZone ? 0 : Math.min(0.85, 0.50 + (this.mode==='survival' ? this.time*0.005 : (this.stage - 1) * 0.03));
+                const itemChance = isSafeZone ? 0 : Math.max(0.20, 0.45 - (this.mode==='survival' ? this.time*0.003 : (this.stage - 1) * 0.02));
+                
+                if(!isSafeZone && Math.random() < obstacleChance) {
+                    let type = Math.random() < 0.3 ? 'crevasse' : 'seal';
+                    this.objects.spawn(type, this.spawnZ);
+                }
+                if(!isSafeZone && Math.random() < itemChance) {
+                    let itemRand = Math.random();
+                    let itemType;
+                    if (itemRand < 0.40) itemType = 'fish'; 
+                    else if (itemRand < 0.65) itemType = 'speedup';
+                    else if (itemRand < 0.80) itemType = 'shield';
+                    else if (itemRand < 0.90) itemType = 'lifeup';
+                    else itemType = 'bomb';
+                    
+                    this.objects.spawn(itemType, this.spawnZ - 5);
+                }
+                this.spawnZ -= (8 + Math.random() * 12);
+            }
+
+            this.objects.update(dt, this.localPlayer, actualSpeed, maxZ);
+            this.updateConfetti(dt);
+
+            if (this.mode === 'stage' && !this.localPlayer.isDead && this.localPlayer.z <= this.endZ) {
+                this.triggerClear();
+            }
+
+            if (this.mode === 'survival') {
+                let alivePlayers = allPlayers.filter(p => !p.isDead);
+                if (this.time > 3 && ((allPlayers.length > 1 && alivePlayers.length <= 1) || (allPlayers.length === 1 && alivePlayers.length === 0))) {
+                    if (alivePlayers.length === 1 && alivePlayers[0] === this.localPlayer && !this.localPlayer.deathTimeRecorded) {
+                         this.localPlayer.survivalTime = this.time;
+                         this.localPlayer.deathTimeRecorded = true;
+                         if (RoomManager.roomCode) RoomManager.broadcastPosition(this.localPlayer.x, this.localPlayer.y, this.localPlayer.z, false, true, this.localPlayer.survivalTime, this.score);
+                    }
+                    if (!this.endTimer) {
+                        this.endTimer = setTimeout(() => this.showSurvivalResult(), 2000);
+                    }
+                }
+            }
+
+            if (this.mode === 'stage' && this.localPlayer.z <= this.endZ + 150 && !this.baseSpawned) {
+                this.baseSpawned = true;
+                this.objects.spawn('base', this.endZ - 10); 
+            }
+
+            this.renderSplitScreen(actualSpeed);
+            this.updateUI(actualSpeed);
+            
+        } else if (this.state === 'CELEBRATING') {
+            this.time += dt;
+            this.localPlayer.updateCelebration(dt);
+            this.updateConfetti(dt);
+            if (RoomManager.roomCode) RoomManager.broadcastPosition(this.localPlayer.x, this.localPlayer.y, this.localPlayer.z, true);
+
+            this.celebrationTimer -= dt;
+            if (this.celebrationTimer <= 0) {
+                this.clearConfetti();
+                this.localPlayer.resetPose();
+                if (this.stage < this.STAGE_COUNT) {
+                    this.stage++;
+                    this.setupStage();
+                } else {
+                    this.submitScore();
+                    this.showResult('🏆 전체 클리어!', `최종 점수: ${this.score}`, '10개 스테이지를 모두 돌파했습니다! 대단해요!', 'STAGE_CLEAR');
+                }
+            }
+
+            this.renderSplitScreen(this.speed);
+            this.updateUI(this.speed);
+        }
+    },
+
+    computeGridViews(n, w, h) {
+        if (n <= 1) return [{ x: 0, y: 0, w, h }];
+        let cols = Math.ceil(Math.sqrt(n));
+        let rows = Math.ceil(n / cols);
+        let cw = w / cols, ch = h / rows;
+        let views = [];
+        for (let i = 0; i < rows * cols; i++) {
+            let col = i % cols;
+            let row = Math.floor(i / cols);
+            let flippedRow = rows - 1 - row;
+            views.push({ x: col * cw, y: flippedRow * ch, w: cw, h: ch, isExtra: i >= n });
+        }
+        return views;
+    },
+
+    renderSplitScreen(actualSpeed = 10) {
+        if (this.cameraShake > 0) this.cameraShake -= 0.016;
+        let shake = Math.max(0, this.cameraShake) * 2;
+
+        let playersList = [this.localPlayer];
+        if (this.state === 'PLAYING' || this.state === 'CELEBRATING') {
+            for (let id in this.remotePlayers) playersList.push(this.remotePlayers[id]);
+        }
+        
+        let renderTargets = playersList;
+        if (this.state === 'PLAYING' && playersList.length > 1) {
+            renderTargets = playersList.filter(p => !p.isDead);
+            if (renderTargets.length === 0) renderTargets = [this.localPlayer]; 
+        }
+
+        let count = renderTargets.length;
+        let w = window.innerWidth, h = window.innerHeight;
+        let views = this.computeGridViews(count, w, h);
+
+        let targetFov = 55 + ((actualSpeed || 10) / 60) * 20;
+
+        for (let i = 0; i < views.length; i++) {
+            let v = views[i];
+            this.renderer.setViewport(v.x, v.y, v.w, v.h);
+            this.renderer.setScissor(v.x, v.y, v.w, v.h);
+            this.camera.aspect = v.w / v.h;
+            this.camera.fov = targetFov;
+            this.camera.updateProjectionMatrix();
+
+            if (!v.isExtra && i < renderTargets.length) {
+                let target = renderTargets[i];
+                
+                playersList.forEach(p => p.group.visible = false);
+                if(!target.isDead || this.state !== 'PLAYING') target.group.visible = true;
+
+                this.ground.position.z = target.z;
+                this.ground.material.map.offset.y = -(target.z % 120) / 120;
+                this.lineL.position.z = target.z;
+                this.lineR.position.z = target.z;
+
+                let tx = target.group.position.x * 0.3;
+                let ty = target.celebrating ? 4.5 : 3.2 + target.group.position.y * 0.3;
+                let tz = target.celebrating ? 10.0 : 6.5; 
+                let lookAtY = target.celebrating ? 2.0 : target.group.position.y * 0.1 + 0.8;
+                let lookAtZ = target.celebrating ? -15 : -30;
+                
+                let targetPos = new THREE.Vector3(tx + (Math.random()-0.5)*shake, ty, target.z + tz);
+                target.cameraData.pos.lerp(targetPos, 0.1);
+                this.camera.position.copy(target.cameraData.pos);
+                
+                let targetLookAt = new THREE.Vector3(target.group.position.x * 0.1, lookAtY, target.z + lookAtZ);
+                target.cameraData.look.lerp(targetLookAt, 0.1);
+                this.camera.lookAt(target.cameraData.look);
+                
+            } else {
+                this.camera.position.set(10, 5, 20);
+                this.camera.lookAt(0, 0, 0);
+            }
+            this.renderer.render(this.scene, this.camera);
+        }
+        
+        playersList.forEach(p => p.group.visible = !p.isDead || this.state !== 'PLAYING');
+    }
+};
+
+window.onload = () => Game.init();
+
+</script>
+</body>
+</html>
